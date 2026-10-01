@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/AirportSimulator.Application/AirportSimulator.Application.csproj" />
+    <Project Path="src/AirportSimulator.Console/AirportSimulator.Console.csproj" />
+    <Project Path="src/AirportSimulator.Domain/AirportSimulator.Domain.csproj" />
+    <Project Path="src/AirportSimulator.Web/AirportSimulator.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/AirportSimulator.Tests/AirportSimulator.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,153 @@
+@page "/"
+@using AirportSimulator.Application
+@using AirportSimulator.Domain
+@inject GameSession Game
+@implements IAsyncDisposable
+
+<PageTitle>Международный аэропорт</PageTitle>
+
+<div class="page">
+    <header>
+        <div>
+            <h1>Международный аэропорт</h1>
+            <p>@Engine.Airport.Name · @Engine.Airport.Code</p>
+        </div>
+        <div class="header-status">
+            <span>@GetWeatherName() · @Engine.Airport.Weather.WindSpeedKph км/ч</span>
+            <strong>@Engine.CurrentTime.ToString("HH:mm")</strong>
+        </div>
+    </header>
+
+    <nav>
+        <button class="primary" @onclick="ToggleRun" disabled="@Game.IsOver">@(isRunning ? "Пауза" : "Запустить")</button>
+        <button @onclick="() => Advance(1)" disabled="@Game.IsOver">+1 мин</button>
+        <button @onclick="() => Advance(10)" disabled="@Game.IsOver">+10 мин</button>
+        <button @onclick="() => Advance(60)" disabled="@Game.IsOver">+1 час</button>
+        <button @onclick="Reset">Новая игра</button>
+    </nav>
+
+    <section class="mission @(Game.IsOver ? (Game.IsWon ? "win" : "lose") : "")">
+        @if (Game.IsOver)
+        {
+            <b>@(Game.IsWon ? "Победа" : "Смена проиграна")</b><span>@Game.ResultMessage Итоговый счёт: @Game.Score.</span>
+        }
+        else
+        {
+            <b>Задача смены</b><span>Выпустить @Game.TargetDepartures рейсов до @Game.ShiftEndsAt.ToString("HH:mm") и сохранить репутацию не ниже 50.</span>
+        }
+    </section>
+
+    <section class="stats">
+        <span>Бюджет: <b>@Game.Balance.ToString("N0") ₽</b></span>
+        <span>Репутация: <b>@Game.Reputation</b></span>
+        <span>Счёт: <b>@Game.Score</b></span>
+        <span>Вылетели: <b>@Report.DepartedFlights / @Game.TargetDepartures</b></span>
+        <span>Задержка: <b>@Report.AverageDelayMinutes.ToString("F1") мин</b></span>
+    </section>
+
+    <main class="content-grid">
+        <section class="card flights">
+            <div class="card-title"><h2>Рейсы</h2><span>@Engine.Airport.Flights.Count в расписании</span></div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Рейс</th><th>Маршрут</th><th>Время</th><th>Самолёт</th><th>Статус</th><th>Решение</th></tr></thead>
+                    <tbody>
+                    @foreach (var flight in Engine.Airport.Flights)
+                    {
+                        <tr>
+                            <td><b>@(Game.IsPriority(flight) ? "★ " : "")@flight.Number</b></td>
+                            <td>@flight.Origin → @flight.Destination</td>
+                            <td>@flight.ScheduledArrival.ToString("HH:mm")</td>
+                            <td>@flight.Aircraft.Model</td>
+                            <td><span class="status @GetStatusClass(flight.Status)">@GetStatusName(flight.Status)</span></td>
+                            <td>
+                                @if (Game.CanPrioritize(flight))
+                                {
+                                    <button class="priority" title="Стоимость @GameSession.PriorityCost ₽" @onclick="() => Prioritize(flight)">Приоритет</button>
+                                }
+                                else if (Game.IsPriority(flight))
+                                {
+                                    <span class="priority-label">Назначен</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <aside>
+            <section class="card resources">
+                <div class="card-title"><h2>Ресурсы</h2></div>
+                <h3>Полосы</h3>
+                @foreach (var runway in Engine.Airport.Runways)
+                {
+                    <div class="resource-row"><b>@runway.Id</b><span>@(runway.IsAvailable ? "Свободна" : runway.OccupiedByFlight)</span></div>
+                }
+                <h3>Гейты</h3>
+                <div class="gates">
+                    @foreach (var gate in Engine.Airport.Gates)
+                    {
+                        <div><b>@gate.Id</b><span>@(gate.IsAvailable ? "Свободен" : gate.OccupiedByFlight)</span></div>
+                    }
+                </div>
+            </section>
+
+            <section class="card events">
+                <div class="card-title"><h2>События</h2></div>
+                @if (Engine.Events.Count == 0)
+                {
+                    <p class="empty">Событий пока нет</p>
+                }
+                @foreach (var item in Engine.Events.TakeLast(6).Reverse())
+                {
+                    <div class="event"><time>@item.Time.ToString("HH:mm")</time><span>@item.Message</span></div>
+                }
+            </section>
+        </aside>
+    </main>
+</div>
+
+@code {
+    private CancellationTokenSource? runCancellation;
+    private bool isRunning;
+    private SimulationEngine Engine => Game.Engine;
+    private SimulationReport Report => Engine.CreateReport();
+
+    private void Advance(int minutes) { Game.Advance(minutes); if (Game.IsOver) Stop(); StateHasChanged(); }
+    private void Reset() { Stop(); Game.Reset(); StateHasChanged(); }
+    private void Prioritize(Flight flight) { Game.Prioritize(flight); StateHasChanged(); }
+
+    private async Task ToggleRun()
+    {
+        if (isRunning) { Stop(); return; }
+        isRunning = true;
+        runCancellation = new CancellationTokenSource();
+        try
+        {
+            while (!runCancellation.Token.IsCancellationRequested && !Game.IsOver)
+            {
+                await Task.Delay(1000, runCancellation.Token);
+                Game.Advance(5);
+                await InvokeAsync(StateHasChanged);
+            }
+            if (Game.IsOver) { isRunning = false; await InvokeAsync(StateHasChanged); }
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private void Stop() { isRunning = false; runCancellation?.Cancel(); runCancellation?.Dispose(); runCancellation = null; }
+    private string GetWeatherName() => Engine.Airport.Weather.Condition switch { WeatherCondition.Clear => "Ясно", WeatherCondition.Rain => "Дождь", WeatherCondition.Fog => "Туман", WeatherCondition.Storm => "Шторм", _ => "Неизвестно" };
+    private static string GetStatusClass(FlightStatus status) => status.ToString().ToLowerInvariant();
+    private static string GetStatusName(FlightStatus status) => status switch
+    {
+        FlightStatus.Scheduled => "По расписанию", FlightStatus.Approaching => "Подлёт",
+        FlightStatus.Landing => "Посадка", FlightStatus.TaxiingToGate => "Руление",
+        FlightStatus.Servicing => "Обслуживание", FlightStatus.Boarding => "Посадка пассажиров",
+        FlightStatus.WaitingForTakeoff => "Ожидает взлёта", FlightStatus.TakingOff => "Взлёт",
+        FlightStatus.Departed => "Вылетел", _ => status.ToString()
+    };
+
+    public ValueTask DisposeAsync() { Stop(); return ValueTask.CompletedTask; }
+}

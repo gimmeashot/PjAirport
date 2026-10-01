@@ -1,0 +1,4 @@
+.app-shell { min-height: 100vh; }
+#blazor-error-ui { color-scheme: dark; background: #401f24; color: #fff; bottom: 0; display: none; left: 0; padding: .8rem 1.25rem; position: fixed; width: 100%; z-index: 1000; }
+#blazor-error-ui .dismiss { cursor: pointer; position: absolute; right: 1rem; }
+
